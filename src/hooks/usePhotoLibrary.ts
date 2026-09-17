@@ -21,7 +21,7 @@ export function usePhotoLibrary() {
   const [rootName, setRootName] = useState<string>();
   /** Ids, die beim Start neu waren – bleibt während der Sitzung stabil. */
   const [newIds, setNewIds] = useState<string[]>([]);
-  const rootRef = useRef<FileSystemDirectoryHandle>();
+  const rootRef = useRef<FileSystemDirectoryHandle | undefined>(undefined);
   const metaLoaded = useRef(false);
 
   const persist = useCallback((next: LibraryMeta) => {
