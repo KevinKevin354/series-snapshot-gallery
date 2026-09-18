@@ -141,6 +141,40 @@ export function usePhotoLibrary() {
     [meta, persist],
   );
 
+  /** Person zu einem Foto hinzufügen oder entfernen (zusätzlich zum Ordner). */
+  const setPhotoPerson = useCallback(
+    (ids: string[], person: string, on: boolean) => {
+      const name = person.trim();
+      if (!name) return;
+      const photoPersons = { ...meta.photoPersons };
+      for (const id of ids) {
+        const list = photoPersons[id] ?? [];
+        if (on) {
+          if (!list.includes(name)) photoPersons[id] = [...list, name];
+        } else {
+          const kept = list.filter((p) => p !== name);
+          if (kept.length > 0) photoPersons[id] = kept;
+          else delete photoPersons[id];
+        }
+      }
+      const extraPersons = meta.extraPersons.includes(name)
+        ? meta.extraPersons
+        : [...meta.extraPersons, name];
+      persist({ ...meta, photoPersons, extraPersons: on ? extraPersons : meta.extraPersons });
+    },
+    [meta, persist],
+  );
+
+  /** Person in die Liste aufnehmen, ohne sie einem Foto zuzuordnen. */
+  const addPerson = useCallback(
+    (name: string) => {
+      const person = name.trim();
+      if (!person || meta.extraPersons.includes(person)) return;
+      persist({ ...meta, extraPersons: [...meta.extraPersons, person] });
+    },
+    [meta, persist],
+  );
+
   const setHidden = useCallback(
     (ids: string[], hide: boolean) => {
       const hidden = new Set(meta.hidden);
@@ -167,6 +201,8 @@ export function usePhotoLibrary() {
     renameTag,
     deleteTag,
     setPhotoTag,
+    setPhotoPerson,
+    addPerson,
     setHidden,
   };
 }
