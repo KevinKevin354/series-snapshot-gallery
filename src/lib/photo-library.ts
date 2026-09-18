@@ -12,9 +12,21 @@ export type Photo = {
 export type LibraryMeta = {
   tags: string[];
   photoTags: Record<string, string[]>;
+  /** Zusätzlich von Hand zugeordnete Personen pro Foto. */
+  photoPersons: Record<string, string[]>;
+  /** Selbst angelegte Personen, die (noch) keinen Ordner haben. */
+  extraPersons: string[];
   hidden: string[];
   seen: string[];
 };
+
+/** Alle Personen eines Fotos: Ordnername plus manuell ergänzte. */
+export function personsOf(photo: Photo, meta: LibraryMeta): string[] {
+  const extra = meta.photoPersons[photo.id] ?? [];
+  const all = photo.person === NO_PERSON ? [...extra] : [photo.person, ...extra];
+  if (all.length === 0) return [NO_PERSON];
+  return [...new Set(all)];
+}
 
 export const NO_PERSON = "(ohne Person)";
 
@@ -26,6 +38,8 @@ const IMAGE_RE = /\.(jpe?g|png|gif|webp|avif|bmp|tiff?)$/i;
 export const emptyMeta = (): LibraryMeta => ({
   tags: [],
   photoTags: {},
+  photoPersons: {},
+  extraPersons: [],
   hidden: [],
   seen: [],
 });
