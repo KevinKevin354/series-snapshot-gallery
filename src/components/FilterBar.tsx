@@ -28,10 +28,11 @@ export function setExclude(filter: FilterState, value: string): FilterState {
   };
 }
 
+/** Ausschluss hat Vorrang. Mehrere Auswahlen müssen ALLE zutreffen (UND). */
 export function matchesFilter(filter: FilterState, values: string[]) {
   if (values.some((v) => filter.exclude.includes(v))) return false;
   if (filter.include.length === 0) return true;
-  return values.some((v) => filter.include.includes(v));
+  return filter.include.every((v) => values.includes(v));
 }
 
 type GroupProps = {
@@ -74,7 +75,7 @@ export function FilterGroup({ title, values, counts, filter, onChange, emptyHint
                 type="button"
                 onClick={() => onChange(cycleInclude(filter, value))}
                 onDoubleClick={() => onChange(setExclude(filter, value))}
-                title="Klick: anzeigen · Doppelklick: ausschließen"
+                title="Klick: muss zutreffen · Doppelklick: ausschließen"
                 className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                   status === "include"
                     ? "border-primary bg-primary text-primary-foreground"
