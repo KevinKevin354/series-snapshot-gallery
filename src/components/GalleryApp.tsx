@@ -1,9 +1,19 @@
 import { useMemo, useState } from "react";
-import { Eye, EyeOff, FolderOpen, Images, Lock, RefreshCw, Sparkles, Tags, X } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  FolderOpen,
+  Images,
+  Lock,
+  Pencil,
+  RefreshCw,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PhotoThumb } from "@/components/PhotoThumb";
 import { Lightbox } from "@/components/Lightbox";
-import { TagManager } from "@/components/TagManager";
+import { PhotoEditor } from "@/components/PhotoEditor";
 import { PasswordGate, GateCard } from "@/components/PasswordGate";
 import {
   FilterGroup,
@@ -11,7 +21,7 @@ import {
   matchesFilter,
   type FilterState,
 } from "@/components/FilterBar";
-import { isFileSystemAccessSupported } from "@/lib/photo-library";
+import { isFileSystemAccessSupported, personsOf } from "@/lib/photo-library";
 import { clearSessionUnlocked } from "@/lib/password-gate";
 import { usePhotoLibrary } from "@/hooks/usePhotoLibrary";
 
@@ -35,7 +45,7 @@ function GalleryPage() {
   const [view, setView] = useState<View>("alle");
   const [selection, setSelection] = useState<string[]>([]);
   const [openIndex, setOpenIndex] = useState<number>();
-  const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [limit, setLimit] = useState(PAGE_SIZE);
 
   const { photos, meta, newIds } = lib;
@@ -47,14 +57,24 @@ function GalleryPage() {
     [photos],
   );
 
+  /** Alle Personen (Ordner + selbst angelegte), für Filter und Bearbeitung. */
+  const allPersons = useMemo(() => {
+    const set = new Set<string>(meta.extraPersons);
+    for (const p of photos) for (const person of personsOf(p, meta)) set.add(person);
+    return [...set].sort((a, b) => a.localeCompare(b, "de"));
+  }, [photos, meta]);
+
   const persons = useMemo(() => {
     const relevant = photos.filter(
       (p) =>
         (seriesFilter.include.length === 0 || seriesFilter.include.includes(p.series)) &&
         !seriesFilter.exclude.includes(p.series),
     );
-    return [...new Set(relevant.map((p) => p.person))].sort((a, b) => a.localeCompare(b, "de"));
-  }, [photos, seriesFilter]);
+    const set = new Set<string>();
+    for (const p of relevant) for (const person of personsOf(p, meta)) set.add(person);
+    for (const person of meta.extraPersons) set.add(person);
+    return [...set].sort((a, b) => a.localeCompare(b, "de"));
+  }, [photos, seriesFilter, meta]);
 
   const visible = useMemo(() => {
     return photos.filter((p) => {
@@ -67,11 +87,11 @@ function GalleryPage() {
         if (view === "ohne" && tags.length > 0) return false;
       }
       if (!matchesFilter(seriesFilter, [p.series])) return false;
-      if (!matchesFilter(personFilter, [p.person])) return false;
+      if (!matchesFilter(personFilter, personsOf(p, meta))) return false;
       if (!matchesFilter(tagFilter, tags)) return false;
       return true;
     });
-  }, [photos, meta.photoTags, view, hiddenSet, newSet, seriesFilter, personFilter, tagFilter]);
+  }, [photos, meta, view, hiddenSet, newSet, seriesFilter, personFilter, tagFilter]);
 
   const counts = useMemo(() => {
     const active = photos.filter((p) => !hiddenSet.has(p.id));
@@ -154,6 +174,8 @@ function GalleryPage() {
     );
   }
 
+  const current = openIndex !== undefined ? visible[openIndex] : undefined;
+
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
@@ -168,8 +190,14 @@ function GalleryPage() {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setTagManagerOpen(true)}>
-              <Tags className="size-4" /> Kennzeichen verwalten
+            <Button
+              variant={editMode ? "default" : "outline"}
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setEditMode((on) => !on)}
+            >
+              <Pencil className="size-4" />
+              Bearbeitungsmodus {editMode ? "an" : "aus"}
             </Button>
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void lib.rescan()}>
               <RefreshCw className="size-4" /> Neu einlesen
@@ -213,6 +241,13 @@ function GalleryPage() {
       </header>
 
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-5">
+        {editMode && (
+          <p className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-xs text-foreground">
+            Bearbeitungsmodus ist an: Ein Klick auf ein Foto öffnet es groß mit der Bearbeitungsspalte für
+            Kennzeichen und Personen.
+          </p>
+        )}
+
         <div className="grid gap-5 rounded-xl border border-border bg-card p-4 md:grid-cols-3">
           <FilterGroup
             title="Serien"
@@ -226,7 +261,7 @@ function GalleryPage() {
             values={persons}
             filter={personFilter}
             onChange={setPersonFilter}
-            emptyHint="Keine Personenordner gefunden."
+            emptyHint="Keine Personen gefunden."
           />
           <FilterGroup
             title="Kennzeichen"
@@ -237,7 +272,7 @@ function GalleryPage() {
             emptyHint="Noch keine Kennzeichen angelegt."
           />
           <p className="text-xs text-muted-foreground md:col-span-3">
-            Klick zeigt an, Doppelklick schließt aus.
+            Klick: muss zutreffen (mehrere Auswahlen gelten gleichzeitig) · Doppelklick: ausschließen.
             <Button variant="link" size="sm" className="h-auto px-2 py-0 text-xs" onClick={resetFilters}>
               Alle Filter zurücksetzen
             </Button>
@@ -308,36 +343,40 @@ function GalleryPage() {
         )}
       </div>
 
-      {openIndex !== undefined && visible[openIndex] && (
+      {openIndex !== undefined && current && !editMode && (
         <Lightbox
           photos={visible}
           index={openIndex}
           tags={meta.tags}
-          photoTags={meta.photoTags[visible[openIndex]!.id] ?? []}
-          hidden={hiddenSet.has(visible[openIndex]!.id)}
+          photoTags={meta.photoTags[current.id] ?? []}
+          hidden={hiddenSet.has(current.id)}
           onIndexChange={setOpenIndex}
           onClose={() => setOpenIndex(undefined)}
           onToggleTag={(tag) => {
-            const id = visible[openIndex]!.id;
-            const on = (meta.photoTags[id] ?? []).includes(tag);
-            lib.setPhotoTag([id], tag, !on);
+            const on = (meta.photoTags[current.id] ?? []).includes(tag);
+            lib.setPhotoTag([current.id], tag, !on);
           }}
-          onToggleHidden={() => {
-            const id = visible[openIndex]!.id;
-            lib.setHidden([id], !hiddenSet.has(id));
-          }}
+          onToggleHidden={() => lib.setHidden([current.id], !hiddenSet.has(current.id))}
         />
       )}
 
-      <TagManager
-        open={tagManagerOpen}
-        onOpenChange={setTagManagerOpen}
-        tags={meta.tags}
-        usage={tagUsage}
-        onAdd={lib.addTag}
-        onRename={lib.renameTag}
-        onDelete={lib.deleteTag}
-      />
+      {openIndex !== undefined && current && editMode && (
+        <PhotoEditor
+          photos={visible}
+          index={openIndex}
+          meta={meta}
+          allPersons={allPersons}
+          onIndexChange={setOpenIndex}
+          onClose={() => setOpenIndex(undefined)}
+          onToggleTag={(tag) => {
+            const on = (meta.photoTags[current.id] ?? []).includes(tag);
+            lib.setPhotoTag([current.id], tag, !on);
+          }}
+          onAddTag={lib.addTag}
+          onTogglePerson={(person, on) => lib.setPhotoPerson([current.id], person, on)}
+          onToggleHidden={() => lib.setHidden([current.id], !hiddenSet.has(current.id))}
+        />
+      )}
     </div>
   );
 }
